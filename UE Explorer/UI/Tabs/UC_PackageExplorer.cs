@@ -21,6 +21,7 @@ namespace UEExplorer.UI.Tabs
 
     using UELib;
     using UELib.Core;
+    using UELib.Decoding;
     using UELib.Flags;
 
     [System.Runtime.InteropServices.ComVisible( false )]
@@ -134,7 +135,7 @@ namespace UEExplorer.UI.Tabs
             
             try
             {
-                LoadPackage();
+                LoadPackage(Path.GetExtension(filePath).StartsWith(".e"));
             }
             catch (Exception exception)
             {
@@ -146,7 +147,7 @@ namespace UEExplorer.UI.Tabs
             }
         }
 
-        private void LoadPackage()
+        private void LoadPackage(bool encrypted)
         {
             SuspendLayout();
             if (Program.Options.bForceLicenseeMode)
@@ -165,7 +166,24 @@ namespace UEExplorer.UI.Tabs
             try
             {
                 // HACK: temporary workaround for legacy UE Explorer code, in order to suppress foreign file signatures without having to modify UELib.
-                var stream = new FileStream(FileName, FileMode.Open, FileAccess.Read);
+                var stream = new MemoryStream();
+                using (var fileStream = new FileStream(FileName, FileMode.Open, FileAccess.Read))
+                {
+                    if (encrypted)
+                    {
+                        using (var encryptedStream = CryptoCore.ROL8.Decrypt(fileStream))
+                        {
+                            encryptedStream.CopyTo(stream);
+                        }
+                    }
+                    else
+                    {
+                        fileStream.CopyTo(stream);
+                    }
+
+                    stream.Position = 0;
+                }
+
                 byte[] buffer = new byte[4];
                 int read = stream.Read(buffer, 0, 4);
                 stream.Close();
@@ -180,6 +198,8 @@ namespace UEExplorer.UI.Tabs
                         && signature != 0x9E2A83C2
                         // Hawken
                         && signature != 0xEA31928C
+                        //ArcticCombat
+                        && signature != 0xA1B2C93F
                     ))
                 {
                     if (MessageBox.Show(
@@ -2111,10 +2131,10 @@ namespace UEExplorer.UI.Tabs
         {
             bool exportable = false;
 
-            var soundObject = ((ObjectNode)node).Object as IUnrealExportable;
-            if( soundObject != null )
+            var uobj = ((ObjectNode)node).Object as IUnrealExportable;
+            if(uobj != null )
             {
-                exportable = soundObject.CompatableExport();	
+                exportable = uobj.CompatableExport();	
         
                 Button_Export.Text = String.Format( Resources.EXPORT_AS, node.Text );	
             }
